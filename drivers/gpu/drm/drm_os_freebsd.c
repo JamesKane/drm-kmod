@@ -118,10 +118,12 @@ drm_dev_alias(struct device *ldev, struct drm_minor *minor, const char *minor_st
 	node = SYSCTL_ADD_NODE(ctx_list, SYSCTL_STATIC_CHILDREN(_dev_drm), OID_AUTO, buf,
 	    CTLFLAG_RD, NULL, "DRM properties");
 	oid_list = SYSCTL_CHILDREN(node);
-	tmp = pci_get_vendor(dev) + ((u32)pci_get_device(dev) << 16);
-	SYSCTL_ADD_PROC(ctx_list, oid_list, OID_AUTO, "PCI_ID",
-	    CTLTYPE_STRING | CTLFLAG_RD, NULL, tmp,
-	    sysctl_pci_id, "A", "PCI vendor and device ID");
+	if (dev_is_pci(ldev->parent)) {
+		tmp = pci_get_vendor(dev) + ((u32)pci_get_device(dev) << 16);
+		SYSCTL_ADD_PROC(ctx_list, oid_list, OID_AUTO, "PCI_ID",
+		    CTLTYPE_STRING | CTLFLAG_RD, NULL, tmp,
+		    sysctl_pci_id, "A", "PCI vendor and device ID");
+	}
 	SYSCTL_ADD_INT(ctx_list, oid_list, OID_AUTO, "type",
 	    CTLFLAG_RD, &minor->type, 0,
 	    "DRM minor type (0=primary, 2=render)");
