@@ -543,7 +543,7 @@ void __drm_dev_dbg(struct _ddebug *desc, const struct device *dev,
 	drm_dev_printk(dev, KERN_INFO, fmt, ##__VA_ARGS__)
 #else
 #define DRM_DEV_INFO(dev, fmt, ...)				\
-	drm_dev_printk(dev, KERN_INFO, __func__, fmt, ##__VA_ARGS__)
+	drm_dev_printk(dev, KERN_INFO, "%s: " fmt, __func__, ##__VA_ARGS__)
 #endif
 
 /* NOTE: this is deprecated in favor of drm_info_once() or dev_info_once(). */
