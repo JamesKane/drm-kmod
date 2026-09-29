@@ -50,6 +50,12 @@ SYSCTL_DECL(_hw_dri);
 extern int drm_vblank_offdelay;
 extern unsigned int drm_timestamp_precision;
 
+/* Global, not per device: adding them with each device would collide. */
+SYSCTL_INT(_hw_dri, OID_AUTO, vblank_offdelay, CTLFLAG_RW,
+    &drm_vblank_offdelay, 0, "");
+SYSCTL_UINT(_hw_dri, OID_AUTO, timestamp_precision, CTLFLAG_RW,
+    &drm_timestamp_precision, 0, "");
+
 static int	   drm_name_info DRM_SYSCTL_HANDLER_ARGS;
 static int	   drm_clients_info DRM_SYSCTL_HANDLER_ARGS;
 static int	   drm_vblank_info DRM_SYSCTL_HANDLER_ARGS;
@@ -136,15 +142,6 @@ drm_sysctl_init(struct drm_device *dev)
 #endif
 
 	drm_add_busid_modesetting(dev, &info->ctx, top);
-
-	SYSCTL_ADD_INT(&info->ctx, SYSCTL_CHILDREN(drioid), OID_AUTO,
-	    "vblank_offdelay", CTLFLAG_RW, &drm_vblank_offdelay,
-	    sizeof(drm_vblank_offdelay),
-	    "");
-	SYSCTL_ADD_INT(&info->ctx, SYSCTL_CHILDREN(drioid), OID_AUTO,
-	    "timestamp_precision", CTLFLAG_RW, &drm_timestamp_precision,
-	    sizeof(drm_timestamp_precision),
-	    "");
 
 	return (0);
 }
