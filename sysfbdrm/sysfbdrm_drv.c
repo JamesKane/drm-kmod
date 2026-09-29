@@ -812,6 +812,9 @@ sysfbdrm_detach(device_t dev)
 {
 	struct sysfbdrm_softc *sc = device_get_softc(dev);
 
+	/* Closing files later would call into the unloaded module. */
+	if (sc->drm != NULL && atomic_read(&sc->drm->open_count) > 0)
+		return (EBUSY);
 	linux_set_current(curthread);
 	if (sc->drm != NULL) {
 		if (sc->drm->registered) {
