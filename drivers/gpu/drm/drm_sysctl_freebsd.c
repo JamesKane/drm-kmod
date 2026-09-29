@@ -193,6 +193,23 @@ drm_add_busid_modesetting(struct drm_device *dev, struct sysctl_ctx_list *ctx,
 	if (oid == NULL)
 		return (-ENOMEM);
 
+	/*
+	 * The nodes of the device in /dev/drm, or -1, so that userland need
+	 * not guess the hw.dri slot of a node from its number.
+	 */
+	oid = SYSCTL_ADD_INT(ctx, SYSCTL_CHILDREN(top), OID_AUTO,
+	    "primary", CTLFLAG_RD, NULL,
+	    dev->primary != NULL ? dev->primary->index : -1,
+	    "Primary node number");
+	if (oid == NULL)
+		return (-ENOMEM);
+	oid = SYSCTL_ADD_INT(ctx, SYSCTL_CHILDREN(top), OID_AUTO,
+	    "render", CTLFLAG_RD, NULL,
+	    dev->render != NULL ? dev->render->index : -1,
+	    "Render node number");
+	if (oid == NULL)
+		return (-ENOMEM);
+
 	return (0);
 }
 
