@@ -513,7 +513,7 @@ void __drm_dev_dbg(struct _ddebug *desc, const struct device *dev,
 	drm_dev_printk(dev, KERN_ERR, "*ERROR* " fmt, ##__VA_ARGS__)
 #elif defined(__FreeBSD__)
 #define DRM_DEV_ERROR(dev, fmt, ...)					\
-	drm_dev_printk(dev, KERN_ERR, "*ERROR* ", __func__, fmt, ##__VA_ARGS__)
+	drm_dev_printk(dev, KERN_ERR, "*ERROR* %s: " fmt, __func__, ##__VA_ARGS__)
 #endif
 
 /**
