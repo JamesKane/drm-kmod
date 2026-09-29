@@ -299,11 +299,18 @@ sysfbdrm_plane_atomic_check(struct drm_plane *plane,
 	struct drm_plane_state *new = drm_atomic_get_new_plane_state(state,
 	    plane);
 	struct drm_crtc_state *crtc_state = NULL;
+	int error;
 
 	if (new->crtc != NULL)
 		crtc_state = drm_atomic_get_new_crtc_state(state, new->crtc);
-	return (drm_atomic_helper_check_plane_state(new, crtc_state,
-	    DRM_PLANE_NO_SCALING, DRM_PLANE_NO_SCALING, false, false));
+	error = drm_atomic_helper_check_plane_state(new, crtc_state,
+	    DRM_PLANE_NO_SCALING, DRM_PLANE_NO_SCALING, false, false);
+	if (error != 0)
+		return (error);
+	/* The copy is of whole pixels. */
+	if (new->visible && ((new->src.x1 | new->src.y1) & 0xffff) != 0)
+		return (-EINVAL);
+	return (0);
 }
 
 static void
@@ -318,7 +325,7 @@ sysfbdrm_plane_atomic_update(struct drm_plane *plane,
 	    plane);
 	struct drm_framebuffer *fb = new->fb;
 	struct drm_atomic_helper_damage_iter iter;
-	struct drm_rect clip;
+	struct drm_rect clip, scr;
 	struct sysfbdrm_bo *bo;
 	const uint8_t *src;
 	uint8_t *dst;
@@ -333,12 +340,18 @@ sysfbdrm_plane_atomic_update(struct drm_plane *plane,
 
 	drm_atomic_helper_damage_iter_init(&iter, old, new);
 	drm_atomic_for_each_plane_damage(&iter, &clip) {
-		len = drm_rect_width(&clip) * SYSFBDRM_CPP;
+		/* Never copy outside the plane's part of the screen. */
+		scr = clip;
+		drm_rect_translate(&scr, dx, dy);
+		if (!drm_rect_intersect(&scr, &new->dst))
+			continue;
+		len = drm_rect_width(&scr) * SYSFBDRM_CPP;
 		src = (const uint8_t *)bo->vaddr + fb->offsets[0] +
-		    clip.y1 * fb->pitches[0] + clip.x1 * SYSFBDRM_CPP;
-		dst = kms->fb_vaddr + (clip.y1 + dy) * kms->fb_pitch +
-		    (clip.x1 + dx) * SYSFBDRM_CPP;
-		for (y = clip.y1; y < clip.y2; y++) {
+		    (scr.y1 - dy) * fb->pitches[0] +
+		    (scr.x1 - dx) * SYSFBDRM_CPP;
+		dst = kms->fb_vaddr + scr.y1 * kms->fb_pitch +
+		    scr.x1 * SYSFBDRM_CPP;
+		for (y = scr.y1; y < scr.y2; y++) {
 			memcpy(dst, src, len);
 			src += fb->pitches[0];
 			dst += kms->fb_pitch;
