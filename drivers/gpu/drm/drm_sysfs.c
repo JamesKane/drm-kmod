@@ -378,8 +378,11 @@ struct device *drm_sysfs_minor_alloc(struct drm_minor *minor)
 		goto err;
 
 	rv = drm_dev_alias(kdev, minor, minor_str);
-	if (rv < 0)
+	if (rv < 0) {
+		/* Undo whatever part of the alias was made. */
+		drm_dev_unalias(minor);
 		goto err;
+	}
 	return kdev;
 
 err:
