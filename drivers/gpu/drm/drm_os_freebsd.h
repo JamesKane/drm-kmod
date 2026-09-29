@@ -22,12 +22,14 @@
 
 #define	KTR_DRM		KTR_DEV
 
+struct drm_device;
 struct drm_minor;
 struct device;
 
 MALLOC_DECLARE(DRM_MEM_DRIVER);
 
 int drm_dev_alias(struct device *dev, struct drm_minor *minor, const char *minor_str);
+void drm_busid_init(struct drm_device *dev);
 void drm_dev_unalias(struct drm_minor *minor);
 void cancel_reset_debug_log(void);
 

@@ -101,6 +101,23 @@ unregister_fictitious_range(struct drm_device *ddev, vm_paddr_t base, size_t siz
 
 /* Framebuffer related code */
 
+/* The bus ID userland identifies the device by: "pci:D:B:S.F" or "platform:<name>". */
+void
+drm_busid_init(struct drm_device *dev)
+{
+	struct pci_dev *pdev;
+
+	if (dev_is_pci(dev->dev)) {
+		pdev = to_pci_dev(dev->dev);
+		snprintf(dev->busid_str, sizeof(dev->busid_str),
+		    "pci:%04x:%02x:%02x.%d", pci_domain_nr(pdev->bus),
+		    pdev->bus->number, PCI_SLOT(pdev->devfn),
+		    PCI_FUNC(pdev->devfn));
+	} else
+		snprintf(dev->busid_str, sizeof(dev->busid_str),
+		    "platform:%s", dev_name(dev->dev));
+}
+
 int
 drm_dev_alias(struct device *ldev, struct drm_minor *minor, const char *minor_str)
 {
@@ -134,6 +151,10 @@ drm_dev_alias(struct device *ldev, struct drm_minor *minor, const char *minor_st
 	SYSCTL_ADD_INT(ctx_list, oid_list, OID_AUTO, "type",
 	    CTLFLAG_RD, &minor->type, 0,
 	    "DRM minor type (0=primary, 2=render)");
+	/* Which device the node is, for any node type (libdrm). */
+	drm_busid_init(minor->dev);
+	SYSCTL_ADD_STRING(ctx_list, oid_list, OID_AUTO, "busid",
+	    CTLFLAG_RD, minor->dev->busid_str, 0, "Bus ID of the device");
 
 	/*
 	 * FreeBSD won't automaticaly create the corresponding device
