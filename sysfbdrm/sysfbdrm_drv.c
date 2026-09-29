@@ -183,7 +183,7 @@ sysfbdrm_bo_fault(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	struct sysfbdrm_bo *bo = to_sysfbdrm_bo(vma->vm_private_data);
 	unsigned long addr;
-	vm_fault_t ret;
+	vm_fault_t r, ret;
 	pgoff_t idx;
 
 	idx = (vmf->address - vma->vm_start) >> PAGE_SHIFT;
@@ -191,15 +191,13 @@ sysfbdrm_bo_fault(struct vm_fault *vmf)
 		return (VM_FAULT_SIGBUS);
 
 	/* Map the rest of the buffer as well; only the first page must succeed. */
-	addr = vmf->address;
 	VM_OBJECT_WLOCK(vma->vm_obj);
-	ret = lkpi_vmf_insert_pfn_prot_locked(vma, addr,
-	    page_to_pfn(bo->pages[idx]), vma->vm_page_prot);
-	while ((ret & VM_FAULT_ERROR) == 0 && ++idx < bo->npages) {
-		addr += PAGE_SIZE;
-		if ((lkpi_vmf_insert_pfn_prot_locked(vma, addr,
-		    page_to_pfn(bo->pages[idx]), vma->vm_page_prot) &
-		    VM_FAULT_ERROR) != 0)
+	for (addr = vmf->address; idx < bo->npages; addr += PAGE_SIZE, idx++) {
+		r = lkpi_vmf_insert_pfn_prot_locked(vma, addr,
+		    page_to_pfn(bo->pages[idx]), vma->vm_page_prot);
+		if (addr == vmf->address)
+			ret = r;
+		if ((r & VM_FAULT_ERROR) != 0)
 			break;
 	}
 	VM_OBJECT_WUNLOCK(vma->vm_obj);
@@ -381,7 +379,6 @@ static void
 sysfbdrm_vblank_tick(void *arg)
 {
 	struct sysfbdrm_kms *kms = arg;
-
 	sbintime_t now;
 
 	drm_crtc_handle_vblank(&kms->crtc);
@@ -504,15 +501,8 @@ sysfbdrm_connector_get_modes(struct drm_connector *connector)
 {
 	struct sysfbdrm_kms *kms = container_of(connector, struct sysfbdrm_kms,
 	    connector);
-	struct drm_display_mode *mode;
 
-	mode = drm_mode_duplicate(connector->dev, &kms->mode);
-	if (mode == NULL)
-		return (0);
-	drm_mode_probed_add(connector, mode);
-	connector->display_info.width_mm = mode->width_mm;
-	connector->display_info.height_mm = mode->height_mm;
-	return (1);
+	return (drm_connector_helper_get_modes_fixed(connector, &kms->mode));
 }
 
 static const struct drm_connector_helper_funcs
@@ -549,8 +539,6 @@ sysfbdrm_fb_create(struct drm_device *drm, struct drm_file *file,
 		return (ERR_PTR(-EINVAL));
 	if (cmd->modifier[0] != DRM_FORMAT_MOD_LINEAR &&
 	    (cmd->flags & DRM_MODE_FB_MODIFIERS) != 0)
-		return (ERR_PTR(-EINVAL));
-	if (cmd->pitches[0] < (uint64_t)cmd->width * SYSFBDRM_CPP)
 		return (ERR_PTR(-EINVAL));
 
 	/* The plane update copies from the buffer; it must cover the fb. */
@@ -659,8 +647,6 @@ sysfbdrm_kms_init(struct sysfbdrm_softc *sc, const struct efi_fb *efifb)
 	    efifb->fb_width, efifb->fb_height,
 	    DRM_MODE_RES_MM(efifb->fb_width, 96ul),
 	    DRM_MODE_RES_MM(efifb->fb_height, 96ul)) };
-	kms->mode.type |= DRM_MODE_TYPE_PREFERRED;
-	drm_mode_set_name(&kms->mode);
 	kms->vblank_period = SBT_1S / drm_mode_vrefresh(&kms->mode);
 
 	error = drmm_mode_config_init(drm);
