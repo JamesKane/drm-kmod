@@ -31,6 +31,10 @@
  * cannot be changed.  Clients draw into dumb buffers in system memory, and
  * the damaged parts are copied to the framebuffer on each commit.  There is
  * no hardware vblank; a timer running at the refresh rate stands in for it.
+ *
+ * Dumb buffers are write-combining: a GPU may render into them through
+ * PRIME, and on systems where it does not snoop the CPU's caches, the copy
+ * would otherwise read stale cache lines.
  */
 
 #include <sys/param.h>
@@ -210,8 +214,9 @@ static const struct vm_operations_struct sysfbdrm_vm_ops = {
 static int
 sysfbdrm_bo_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 {
-	/* The pages are ordinary cacheable memory. */
 	vm_flags_set(vma, VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP);
+	/* The caching mode must match the kernel's mapping; see the top. */
+	vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
 	return (0);
 }
 
@@ -257,7 +262,8 @@ sysfbdrm_bo_create(struct drm_device *drm, size_t size)
 		bo->pages[i]->oflags &= ~VPO_UNMANAGED;
 #endif
 	}
-	bo->vaddr = vmap(bo->pages, bo->npages, VM_MAP, PAGE_KERNEL);
+	bo->vaddr = vmap(bo->pages, bo->npages, VM_MAP,
+	    pgprot_writecombine(PAGE_KERNEL));
 	if (bo->vaddr == NULL)
 		goto fail;
 	return (bo);
