@@ -116,6 +116,9 @@ static void drm_minor_alloc_release(struct drm_device *dev, void *data)
 
 	WARN_ON(dev != minor->dev);
 
+#ifdef __FreeBSD__
+	drm_dev_unalias(minor);
+#endif
 	put_device(minor->kdev);
 
 	xa_erase(drm_minor_get_xa(minor->type), minor->index);

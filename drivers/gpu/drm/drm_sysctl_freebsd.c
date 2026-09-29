@@ -43,6 +43,7 @@ static int drm_add_busid_modesetting(struct drm_device *dev, struct sysctl_ctx_l
 	   struct sysctl_oid *top);
 
 SYSCTL_DECL(_hw_drm);
+SYSCTL_DECL(_hw_dri);
 
 #define DRM_SYSCTL_HANDLER_ARGS	(SYSCTL_HANDLER_ARGS)
 
@@ -79,14 +80,12 @@ drm_sysctl_init(struct drm_device *dev)
 	info = malloc(sizeof *info, DRM_MEM_DRIVER, M_WAITOK | M_ZERO);
 	dev->sysctl = info;
 
-	/* Add the sysctl node for DRI if it doesn't already exist */
-	drioid = SYSCTL_ADD_NODE(&info->ctx, SYSCTL_CHILDREN(&sysctl___hw), OID_AUTO,
-	    "dri", CTLFLAG_RW, NULL, "DRI Graphics");
-	if (!drioid) {
-		free(dev->sysctl, DRM_MEM_DRIVER);
-		dev->sysctl = NULL;
-		return (-ENOMEM);
-	}
+	/*
+	 * hw.dri is a static node (drm_os_freebsd.c).  Adding it to the
+	 * context would make sysctl_ctx_free() fail, leaving this device's
+	 * nodes behind after it is gone.
+	 */
+	drioid = &sysctl___hw_dri;
 
 	/* Find the next free slot under hw.dri */
 	i = 0;
@@ -131,8 +130,6 @@ drm_sysctl_init(struct drm_device *dev)
 			return (-ENOMEM);
 		}
 	}
-	SYSCTL_ADD_LONG(&info->ctx, SYSCTL_CHILDREN(drioid), OID_AUTO, "debug",
-	    CTLFLAG_RW, &__drm_debug, "Enable debugging output");
 #ifdef notyet
 	if (dev->driver->sysctl_init != NULL)
 		dev->driver->sysctl_init(dev, &info->ctx, top);
