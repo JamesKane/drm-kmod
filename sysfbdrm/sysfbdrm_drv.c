@@ -757,12 +757,8 @@ sysfbdrm_attach(device_t dev)
 	 * the device is freed by its release function, not by us.
 	 */
 	ldev = kzalloc(sizeof(*ldev), GFP_KERNEL);
-	ldev->parent = &linux_root_device;
-	ldev->bsddev = dev;
+	lkpi_device_init(ldev, NULL, dev);
 	ldev->release = sysfbdrm_ldev_release;
-	spin_lock_init(&ldev->devres_lock);
-	INIT_LIST_HEAD(&ldev->devres_head);
-	INIT_LIST_HEAD(&ldev->irqents);
 	error = kobject_init_and_add(&ldev->kobj, &linux_dev_ktype,
 	    &linux_root_device.kobj, device_get_nameunit(dev));
 	if (error != 0) {
