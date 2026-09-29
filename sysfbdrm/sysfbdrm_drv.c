@@ -113,6 +113,7 @@ struct sysfbdrm_softc {
 	vm_paddr_t		fb_paddr;
 	vm_size_t		fb_size;
 	uint8_t			*fb_vaddr;
+	bool			vt_frozen;	/* by master_set */
 };
 
 /* A dumb buffer: pages of system memory with a kernel mapping. */
@@ -594,17 +595,32 @@ sysfbdrm_master_set(struct drm_device *drm, struct drm_file *file,
     bool from_open)
 {
 	struct sysfbdrm_softc *sc = device_get_softc(drm->dev->bsddev);
+	struct fb_info *fb;
 
+	/*
+	 * Stop vt drawing on our framebuffer, and remember whether it was
+	 * this that stopped it: master_drop must not start it again when a
+	 * console on another framebuffer, or another driver, stopped it.
+	 */
+	if (sc->vt_frozen || main_vd == NULL || main_vd->vd_driver == NULL ||
+	    strcmp(main_vd->vd_driver->vd_name, "efifb") != 0)
+		return;
+	fb = main_vd->vd_softc;
+	if ((fb->fb_flags & FB_FLAG_NOWRITE) != 0)
+		return;
 	vt_freeze_main_vd(sc->fb_paddr, sc->fb_size);
+	sc->vt_frozen = (fb->fb_flags & FB_FLAG_NOWRITE) != 0;
 }
 
 static void
 sysfbdrm_master_drop(struct drm_device *drm, struct drm_file *file)
 {
-	/* vt_unfreeze_main_vd() assumes an fb-based console driver. */
-	if (main_vd != NULL && main_vd->vd_driver != NULL &&
-	    strcmp(main_vd->vd_driver->vd_name, "efifb") == 0)
+	struct sysfbdrm_softc *sc = device_get_softc(drm->dev->bsddev);
+
+	if (sc->vt_frozen) {
 		vt_unfreeze_main_vd();
+		sc->vt_frozen = false;
+	}
 }
 
 DEFINE_DRM_GEM_FOPS(sysfbdrm_fops);
