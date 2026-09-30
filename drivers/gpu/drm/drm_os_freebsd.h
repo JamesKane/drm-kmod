@@ -26,6 +26,16 @@ struct drm_device;
 struct drm_minor;
 struct device;
 
+/*
+ * LinuxKPI's dev_is_pci() is only right from 1600028; before, it was false
+ * for DRM drivers, which attach below vgapci(4) and were all on PCI.
+ */
+#if __FreeBSD_version >= 1600028
+#define	drm_dev_is_pci(dev)	dev_is_pci(dev)
+#else
+#define	drm_dev_is_pci(dev)	true
+#endif
+
 MALLOC_DECLARE(DRM_MEM_DRIVER);
 
 int drm_dev_alias(struct device *dev, struct drm_minor *minor, const char *minor_str);

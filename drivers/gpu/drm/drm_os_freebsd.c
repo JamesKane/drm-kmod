@@ -107,7 +107,7 @@ drm_busid_init(struct drm_device *dev)
 {
 	struct pci_dev *pdev;
 
-	if (dev_is_pci(dev->dev)) {
+	if (drm_dev_is_pci(dev->dev)) {
 		pdev = to_pci_dev(dev->dev);
 		snprintf(dev->busid_str, sizeof(dev->busid_str),
 		    "pci:%04x:%02x:%02x.%d", pci_domain_nr(pdev->bus),
@@ -142,7 +142,7 @@ drm_dev_alias(struct device *ldev, struct drm_minor *minor, const char *minor_st
 	node = SYSCTL_ADD_NODE(ctx_list, SYSCTL_STATIC_CHILDREN(_dev_drm), OID_AUTO, buf,
 	    CTLFLAG_RD, NULL, "DRM properties");
 	oid_list = SYSCTL_CHILDREN(node);
-	if (dev_is_pci(ldev->parent)) {
+	if (drm_dev_is_pci(ldev->parent)) {
 		tmp = pci_get_vendor(dev) + ((u32)pci_get_device(dev) << 16);
 		SYSCTL_ADD_PROC(ctx_list, oid_list, OID_AUTO, "PCI_ID",
 		    CTLTYPE_STRING | CTLFLAG_RD, NULL, tmp,
