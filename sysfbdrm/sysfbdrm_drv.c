@@ -32,9 +32,9 @@
  * the damaged parts are copied to the framebuffer on each commit.  There is
  * no hardware vblank; a timer running at the refresh rate stands in for it.
  *
- * Dumb buffers are write-combining: a GPU may render into them through
- * PRIME, and on systems where it does not snoop the CPU's caches, the copy
- * would otherwise read stale cache lines.
+ * Dumb buffers are cacheable.  A GPU may render into them through PRIME, and
+ * on systems where it does not snoop the CPU's caches, the copy would read
+ * stale lines, so it first cleans and invalidates what it copies.
  */
 
 #include <sys/param.h>
@@ -52,6 +52,7 @@
 #include <vm/vm_object.h>
 #include <vm/vm_page.h>
 
+#include <machine/cpufunc.h>
 #include <machine/metadata.h>
 
 #include <dev/vt/vt.h>
@@ -214,8 +215,7 @@ static int
 sysfbdrm_bo_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 {
 	vm_flags_set(vma, VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP);
-	/* The caching mode must match the kernel's mapping; see the top. */
-	vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
+	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 	return (0);
 }
 
@@ -226,6 +226,19 @@ static const struct drm_gem_object_funcs sysfbdrm_bo_funcs = {
 	.mmap = sysfbdrm_bo_mmap,
 	.vm_ops = &sysfbdrm_vm_ops,
 };
+
+/*
+ * Write back and drop the CPU's cached copy of a buffer, for a GPU that does
+ * not snoop the CPU's caches: before it renders into the buffer, and before
+ * the CPU reads what it rendered.
+ */
+static inline void
+sysfbdrm_cache_wbinv(const void *va, size_t len)
+{
+#ifdef __aarch64__
+	cpu_dcache_wbinv_range(__DECONST(void *, va), len);
+#endif
+}
 
 static struct sysfbdrm_bo *
 sysfbdrm_bo_create(struct drm_device *drm, size_t size)
@@ -261,10 +274,15 @@ sysfbdrm_bo_create(struct drm_device *drm, size_t size)
 		bo->pages[i]->oflags &= ~VPO_UNMANAGED;
 #endif
 	}
-	bo->vaddr = vmap(bo->pages, bo->npages, VM_MAP,
-	    pgprot_writecombine(PAGE_KERNEL));
+	bo->vaddr = vmap(bo->pages, bo->npages, VM_MAP, PAGE_KERNEL);
 	if (bo->vaddr == NULL)
 		goto fail;
+	/*
+	 * The zeroing may still be in the CPU's cache, to be written back
+	 * over what a GPU renders into the buffer; PRIME import does no
+	 * cache maintenance.
+	 */
+	sysfbdrm_cache_wbinv(bo->vaddr, size);
 	return (bo);
 
 fail:
@@ -351,6 +369,7 @@ sysfbdrm_plane_atomic_update(struct drm_plane *plane,
 		dst = kms->fb_vaddr + scr.y1 * kms->fb_pitch +
 		    scr.x1 * SYSFBDRM_CPP;
 		for (y = scr.y1; y < scr.y2; y++) {
+			sysfbdrm_cache_wbinv(src, len);
 			memcpy(dst, src, len);
 			src += fb->pitches[0];
 			dst += kms->fb_pitch;
