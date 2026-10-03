@@ -195,6 +195,21 @@ void __drm_printfn_seq_file(struct drm_printer *p, struct va_format *vaf)
 }
 EXPORT_SYMBOL(__drm_printfn_seq_file);
 
+#ifdef __FreeBSD__
+/*
+ * Linux's printk ends a message's line itself (but for KERN_CONT); FreeBSD's
+ * printf leaves it open, so the next message would run on.
+ */
+static void
+drm_fbsd_end_line(const char *format)
+{
+	size_t len = strlen(format);
+
+	if (len == 0 || format[len - 1] != '\n')
+		printf("\n");
+}
+#endif
+
 static void __drm_dev_vprintk(const struct device *dev, const char *level,
 			      const void *origin, const char *prefix,
 			      struct va_format *vaf)
@@ -204,6 +219,22 @@ static void __drm_dev_vprintk(const struct device *dev, const char *level,
 	if (!prefix)
 		prefix = "";
 
+#ifdef __FreeBSD__
+	/*
+	 * FreeBSD's printf takes no %pV (or %ps): the prefix, then the
+	 * message's own format.
+	 */
+	(void)origin;
+	(void)level;
+	if (dev != NULL && dev->bsddev != NULL)
+		device_printf(dev->bsddev, "[" DRM_NAME "]%s%s ", prefix_pad,
+		    prefix);
+	else
+		printf("[" DRM_NAME "]%s%s ", prefix_pad, prefix);
+	vprintf(vaf->fmt, *vaf->va);
+	drm_fbsd_end_line(vaf->fmt);
+	return;
+#endif
 	if (dev) {
 		if (origin)
 			dev_printk(level, dev, "[" DRM_NAME ":%ps]%s%s %pV",
@@ -224,7 +255,15 @@ static void __drm_dev_vprintk(const struct device *dev, const char *level,
 void __drm_printfn_info(struct drm_printer *p, struct va_format *vaf)
 {
 #ifdef __FreeBSD__
-	dev_info((const struct device *)(p->arg), "[" DRM_NAME "] %pV", vaf);
+	/* FreeBSD's printf takes no %pV: the prefix, then the format. */
+	const struct device *dev = p->arg;
+
+	if (dev != NULL && dev->bsddev != NULL)
+		device_printf(dev->bsddev, "[" DRM_NAME "] ");
+	else
+		printf("[" DRM_NAME "] ");
+	vprintf(vaf->fmt, *vaf->va);
+	drm_fbsd_end_line(vaf->fmt);
 #else
 	dev_info(p->arg, "[" DRM_NAME "] %pV", vaf);
 #endif	
@@ -364,6 +403,9 @@ void drm_dev_printk(const struct device *dev, const char *level,
 		printf("[" DRM_NAME "] ");
 	vprintf(format, args);
 	va_end(args);
+	/* KERN_CONT, which LinuxKPI defines empty, continues the line. */
+	if (level == NULL || level[0] != '\0')
+		drm_fbsd_end_line(format);
 }
 #endif
 
@@ -406,6 +448,7 @@ void __drm_dev_dbg(struct _ddebug *desc, const struct device *dev,
 	va_start(args, format);
 	vprintf(format, args);
 	va_end(args);
+	drm_fbsd_end_line(format);
 }
 #endif
 
