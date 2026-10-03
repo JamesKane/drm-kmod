@@ -94,16 +94,23 @@ drm_sysctl_init(struct drm_device *dev)
 	 */
 	drioid = &sysctl___hw_dri;
 
-	/* Find the next free slot under hw.dri */
-	i = 0;
+	/*
+	 * Find the first free slot under hw.dri: the children come in no
+	 * particular order, so look for each name in turn.
+	 */
+	for (i = 0; i <= 9; i++) {
 #ifdef SYSCTL_FOREACH
-	SYSCTL_FOREACH(oid, SYSCTL_CHILDREN(drioid))
+		SYSCTL_FOREACH(oid, SYSCTL_CHILDREN(drioid))
 #else
-	SLIST_FOREACH(oid, SYSCTL_CHILDREN(drioid), oid_link)
+		SLIST_FOREACH(oid, SYSCTL_CHILDREN(drioid), oid_link)
 #endif
-	{
-		if (i == oid->oid_name[0] - '0' && oid->oid_name[1] == 0)
-			i++;
+		{
+			if (oid->oid_name[0] == '0' + i &&
+			    oid->oid_name[1] == '\0')
+				break;
+		}
+		if (oid == NULL)
+			break;
 	}
 	if (i > 9) {
 		drm_sysctl_cleanup(dev);
