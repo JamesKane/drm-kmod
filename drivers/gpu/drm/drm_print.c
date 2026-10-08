@@ -30,6 +30,9 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/stdarg.h>
+#ifdef __FreeBSD__
+#include <sys/sbuf.h>
+#endif
 
 #include <drm/drm.h>
 #include <drm/drm_drv.h>
@@ -197,16 +200,30 @@ EXPORT_SYMBOL(__drm_printfn_seq_file);
 
 #ifdef __FreeBSD__
 /*
- * Linux's printk ends a message's line itself (but for KERN_CONT); FreeBSD's
- * printf leaves it open, so the next message would run on.
+ * A message as Linux's printk makes one: the device's name, a head, the
+ * message, the line ended (but for KERN_CONT, end false), all written at
+ * once, so that two CPUs' messages do not interleave as separate printf()s
+ * do.  FreeBSD's printf takes no %pV, hence the head and format apart.
  */
 static void
-drm_fbsd_end_line(const char *format)
+drm_fbsd_vprint(const struct device *dev, const char *head, const char *fmt,
+    va_list ap, bool end)
 {
-	size_t len = strlen(format);
+	char buf[256];
+	struct sbuf sb;
+	size_t len, written = 0;
 
-	if (len == 0 || format[len - 1] != '\n')
-		printf("\n");
+	sbuf_new(&sb, buf, sizeof(buf), SBUF_FIXEDLEN);
+	sbuf_set_drain(&sb, sbuf_printf_drain, &written);
+	if (dev != NULL && dev->bsddev != NULL)
+		sbuf_printf(&sb, "%s: ", device_get_nameunit(dev->bsddev));
+	sbuf_cat(&sb, head);
+	sbuf_vprintf(&sb, fmt, ap);
+	len = strlen(fmt);
+	if (end && (len == 0 || fmt[len - 1] != '\n'))
+		sbuf_putc(&sb, '\n');
+	sbuf_finish(&sb);
+	sbuf_delete(&sb);
 }
 #endif
 
@@ -220,20 +237,16 @@ static void __drm_dev_vprintk(const struct device *dev, const char *level,
 		prefix = "";
 
 #ifdef __FreeBSD__
-	/*
-	 * FreeBSD's printf takes no %pV (or %ps): the prefix, then the
-	 * message's own format.
-	 */
-	(void)origin;
-	(void)level;
-	if (dev != NULL && dev->bsddev != NULL)
-		device_printf(dev->bsddev, "[" DRM_NAME "]%s%s ", prefix_pad,
+	{
+		char head[64];
+
+		(void)origin;
+		(void)level;
+		snprintf(head, sizeof(head), "[" DRM_NAME "]%s%s ", prefix_pad,
 		    prefix);
-	else
-		printf("[" DRM_NAME "]%s%s ", prefix_pad, prefix);
-	vprintf(vaf->fmt, *vaf->va);
-	drm_fbsd_end_line(vaf->fmt);
-	return;
+		drm_fbsd_vprint(dev, head, vaf->fmt, *vaf->va, true);
+		return;
+	}
 #endif
 	if (dev) {
 		if (origin)
@@ -255,15 +268,7 @@ static void __drm_dev_vprintk(const struct device *dev, const char *level,
 void __drm_printfn_info(struct drm_printer *p, struct va_format *vaf)
 {
 #ifdef __FreeBSD__
-	/* FreeBSD's printf takes no %pV: the prefix, then the format. */
-	const struct device *dev = p->arg;
-
-	if (dev != NULL && dev->bsddev != NULL)
-		device_printf(dev->bsddev, "[" DRM_NAME "] ");
-	else
-		printf("[" DRM_NAME "] ");
-	vprintf(vaf->fmt, *vaf->va);
-	drm_fbsd_end_line(vaf->fmt);
+	drm_fbsd_vprint(p->arg, "[" DRM_NAME "] ", vaf->fmt, *vaf->va, true);
 #else
 	dev_info(p->arg, "[" DRM_NAME "] %pV", vaf);
 #endif	
@@ -397,15 +402,10 @@ void drm_dev_printk(const struct device *dev, const char *level,
 	va_start(args, format);
 	vaf.fmt = format;
 	vaf.va = &args;
-	if (dev)
-		device_printf((dev)->bsddev, "[" DRM_NAME "] ");
-	else
-		printf("[" DRM_NAME "] ");
-	vprintf(format, args);
-	va_end(args);
 	/* KERN_CONT, which LinuxKPI defines empty, continues the line. */
-	if (level == NULL || level[0] != '\0')
-		drm_fbsd_end_line(format);
+	drm_fbsd_vprint(dev, "[" DRM_NAME "] ", format, args,
+	    level == NULL || level[0] != '\0');
+	va_end(args);
 }
 #endif
 
@@ -436,19 +436,18 @@ void __drm_dev_dbg(struct _ddebug *desc, const struct device *dev,
 {
 	va_list args;
 
+	char head[96];
+
 	if (!(__drm_debug & category))
 		return;
 
-	if (dev) {
-		device_print_prettyname((dev)->bsddev);
-		printf("%s: ", func);
-	}
+	if (dev != NULL && dev->bsddev != NULL)
+		snprintf(head, sizeof(head), "%s: ", func);
 	else
-		printf("[" DRM_NAME "] %s: ", func);
+		snprintf(head, sizeof(head), "[" DRM_NAME "] %s: ", func);
 	va_start(args, format);
-	vprintf(format, args);
+	drm_fbsd_vprint(dev, head, format, args, true);
 	va_end(args);
-	drm_fbsd_end_line(format);
 }
 #endif
 
@@ -484,8 +483,13 @@ void __drm_err(const char *function_name, const char *format, ...)
 	if (panicstr != NULL)
 		return;
 
-	printf("[" DRM_NAME " ERROR :%s] ", function_name);
-	vprintf(format, args);
+	{
+		char head[96];
+
+		snprintf(head, sizeof(head), "[" DRM_NAME " ERROR :%s] ",
+		    function_name);
+		drm_fbsd_vprint(NULL, head, format, args, true);
+	}
 
 	va_end(args);
 }
